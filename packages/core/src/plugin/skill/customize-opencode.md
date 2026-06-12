@@ -277,6 +277,26 @@ opencode ships with `build`, `plan`, `general`, `explore`. Hidden internal agent
 `compaction`, `title`, `summary`. To override a built-in's fields, define the
 same key in `agent: { <name>: { ... } }`.
 
+### Subagent persistent memory
+
+The `task` tool accepts an optional `subagent_slug` parameter. When the same
+slug is reused within a session, the subagent continues with its previous
+conversation history — as a conversation with a persistent specialist, not a
+fresh stateless call.
+
+```
+task(subagent_type="general", subagent_slug="code-reviewer", prompt="review file A")
+task(subagent_type="general", subagent_slug="code-reviewer", prompt="now review file B")
+```
+
+The second call resumes the same subagent session. Slugs are scoped to the
+parent session, isolated from other slugs, and cleaned up automatically when
+the session ends. If omitted, each call creates a fresh subagent as before.
+
+Use slugs when the same specialist needs to accumulate context across multiple
+invocations — for example, iterative code review, multi-step analysis, or
+phased implementation where the subagent benefits from remembering earlier work.
+
 ## Plugins
 
 `plugin:` is an array. Each entry is one of:

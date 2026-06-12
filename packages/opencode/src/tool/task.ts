@@ -10,10 +10,11 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
-import { Effect, Exit, Schema, Scope } from "effect"
+import { Effect, Exit, Schema, Scope, Option } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
+import { SubagentIdentity } from "@/session/subagent-identity"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -47,6 +48,19 @@ const BaseParameterFields = {
   task_id: Schema.optional(Schema.String).annotate({
     description:
       "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
+  }),
+  subagent_slug: Schema.optional(
+    Schema.String.check(
+      Schema.isPattern(/^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/),
+    ),
+  ).annotate({
+    description: [
+      "A stable identifier for this subagent within the current session.",
+      "When the same subagent_slug is reused in subsequent calls within the same session,",
+      "the subagent continues with its previous conversation history.",
+      "Use simple identifiers like 'code-reviewer' or 'frontend-dev'.",
+      "If omitted, a fresh subagent is created each time.",
+    ].join(" "),
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
 }
@@ -120,7 +134,20 @@ export const TaskTool = Tool.define(
 
       const session = params.task_id
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        : undefined
+        : params.subagent_slug
+          ? yield* SubagentIdentity.lookup({
+              parentSessionID: ctx.sessionID,
+              subagentSlug: params.subagent_slug,
+            }).pipe(
+              Effect.provideService(Database.Service, database),
+              Effect.flatMap((id) =>
+                id
+                  ? sessions.get(id).pipe(Effect.map(Option.some), Effect.catchCause(() => Effect.succeed(Option.none())))
+                  : Effect.succeed(Option.none()),
+              ),
+              Effect.map((opt) => Option.getOrNull(opt)),
+            )
+          : undefined
       const parent = yield* sessions.get(ctx.sessionID)
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],
@@ -139,23 +166,32 @@ export const TaskTool = Tool.define(
           action: "deny" as const,
         })) ?? []),
       ]
-      const nextSession =
-        session ??
-        (yield* sessions.create({
-          parentID: ctx.sessionID,
-          title: params.description + ` (@${next.name} subagent)`,
-          agent: next.name,
-          permission: [
-            ...childPermission,
-            ...childToolDenies.filter(
-              (deny) =>
-                !childPermission.some(
-                  (rule) =>
-                    rule.permission === deny.permission && rule.pattern === deny.pattern && rule.action === deny.action,
-                ),
-            ),
-          ],
-        }))
+      const createdSession = session
+        ? undefined
+        : yield* sessions.create({
+            parentID: ctx.sessionID,
+            title: params.description + ` (@${next.name} subagent)`,
+            agent: next.name,
+            permission: [
+              ...childPermission,
+              ...childToolDenies.filter(
+                (deny) =>
+                  !childPermission.some(
+                    (rule) =>
+                      rule.permission === deny.permission && rule.pattern === deny.pattern && rule.action === deny.action,
+                  ),
+              ),
+            ],
+          })
+      const nextSession = session ?? createdSession!
+
+      if (params.subagent_slug && createdSession) {
+        yield* SubagentIdentity.store({
+          parentSessionID: ctx.sessionID,
+          subagentSlug: params.subagent_slug,
+          childSessionID: nextSession.id,
+        }).pipe(Effect.provideService(Database.Service, database))
+      }
 
       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
         Effect.provideService(Database.Service, database),
@@ -173,6 +209,7 @@ export const TaskTool = Tool.define(
         sessionId: nextSession.id,
         model,
         ...(runInBackground ? { background: true } : {}),
+        ...(params.subagent_slug ? { subagent_slug: params.subagent_slug } : {}),
       }
 
       yield* ctx.metadata({

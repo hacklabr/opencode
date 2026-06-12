@@ -383,7 +383,7 @@ export function RunCommandMenuBody(props: {
                 activeSubagentCount() > 0 ? `${activeSubagentCount()} active` : `${props.subagents().length} recent`,
               keywords: props
                 .subagents()
-                .map((item) => `${item.label} ${item.description} ${item.title ?? ""}`)
+                .map((item) => `${item.label} ${item.description} ${item.title ?? ""} ${item.slug ?? ""}`)
                 .join(" "),
             },
           ]
@@ -597,12 +597,13 @@ export function RunSubagentSelectBody(props: {
   const entries = createMemo<SubagentEntry[]>(() =>
     props.tabs().map((item) => {
       const title = item.description || item.title || item.label
+      const label = item.slug ? `@${item.slug} · ${item.label}` : item.label
       return {
         category: "",
         display: title,
-        description: title === item.label ? undefined : item.label,
+        description: title === item.label ? undefined : label,
         footer: subagentStatusLabel(item.status),
-        keywords: `${item.label} ${item.description} ${item.title ?? ""} ${item.status}`,
+        keywords: `${item.label} ${item.description} ${item.title ?? ""} ${item.slug ?? ""} ${item.status}`,
         sessionID: item.sessionID,
         current: props.current() === item.sessionID,
       }

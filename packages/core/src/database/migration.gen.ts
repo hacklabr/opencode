@@ -36,5 +36,6 @@ export const migrations = (
     import("./migration/20260605042240_add_context_epoch_agent"),
     import("./migration/20260611035744_credential"),
     import("./migration/20260611192811_lush_chimera"),
+    import("./migration/20260612004709_subagent_identity"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

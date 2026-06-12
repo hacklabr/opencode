@@ -164,6 +164,25 @@ export const SessionInputTable = sqliteTable(
   ],
 )
 
+export const SubagentIdentityTable = sqliteTable(
+  "subagent_identity",
+  {
+    parent_session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    subagent_slug: text().notNull(),
+    child_session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.parent_session_id, table.subagent_slug] }),
+    index("subagent_identity_child_idx").on(table.child_session_id),
+  ],
+)
+
 export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
   session_id: text()
     .$type<SessionSchema.ID>()

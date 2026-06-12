@@ -75,11 +75,10 @@ export function RunFooterSubagentBody(props: {
   })
   const subtitle = createMemo(() => {
     const current = tab()
-    if (!current || title() === current.label) {
-      return ""
-    }
-
-    return current.label
+    if (!current) return ""
+    if (!current.slug) return title() === current.label ? "" : current.label
+    const label = `@${current.slug} · ${current.label}`
+    return title() === current.label || title() === label ? label : label
   })
   const rows = indexArray(commits, (commit, index) => (
     <box flexDirection="column" gap={0} flexShrink={0}>
